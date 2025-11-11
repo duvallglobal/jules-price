@@ -1,5 +1,9 @@
 from flask import Flask
 from flask_sqlalchemy import SQLAlchemy
+from dotenv import load_dotenv
+import os
+
+load_dotenv()
 
 app = Flask(__name__)
 app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///listings.db'
@@ -11,6 +15,8 @@ from api.listing_routes import listing_bp
 app.register_blueprint(listing_bp)
 
 if __name__ == '__main__':
+    if not os.getenv("GOOGLE_API_KEY"):
+        raise ValueError("GOOGLE_API_KEY not found in environment variables. Please create a .env file and add it.")
     with app.app_context():
         db.create_all()
     app.run(debug=True)

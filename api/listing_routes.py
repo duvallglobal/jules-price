@@ -4,20 +4,25 @@ from models.listing import Listing
 from models.photo import Photo
 from models.tag import Tag
 from services.ai_service import extract_details_from_image, generate_backgrounds
+from services.file_service import save_file
+from services.shopify_service import push_to_shopify
 
 listing_bp = Blueprint('listing_bp', __name__)
 
 @listing_bp.route('/api/listings', methods=['POST'])
 def create_listing():
-    # For now, we'll simulate an image upload
-    # In a real app, you'd handle the file from request.files
     if 'photo' not in request.files:
         return jsonify({'error': 'No photo uploaded'}), 400
 
-    image = request.files['photo']
+    image_file = request.files['photo']
 
-    # Use the mock AI service to get details
-    details = extract_details_from_image(image)
+    # Save the uploaded file
+    filepath = save_file(image_file)
+    if not filepath:
+        return jsonify({'error': 'File type not allowed or error saving file'}), 400
+
+    # Use the real AI service to get details
+    details = extract_details_from_image(filepath)
 
     new_listing = Listing(
         title=details['title'],
@@ -38,8 +43,7 @@ def create_listing():
         db.session.add(new_tag)
 
     # Add photo
-    # In a real app, you would save the photo and get a URL
-    new_photo = Photo(listing_id=new_listing.id, original_url='https://placehold.co/600x600/ccc/000?text=Uploaded', is_primary=True)
+    new_photo = Photo(listing_id=new_listing.id, original_url=filepath, is_primary=True)
     db.session.add(new_photo)
 
     db.session.commit()
@@ -78,9 +82,11 @@ def update_listing(id):
 @listing_bp.route('/api/listings/<int:id>/publish', methods=['POST'])
 def publish_listing(id):
     listing = Listing.query.get_or_404(id)
-    # In a real app, you'd have logic here to push to Shopify
-    print(f"Publishing listing {listing.id} to Shopify...")
-    return jsonify({'message': f'Listing {listing.id} has been pushed to Shopify.'})
+    result = push_to_shopify(listing)
+    if result['status'] == 'success':
+        return jsonify({'message': f'Listing {listing.id} has been pushed to Shopify with ID {result["shopify_id"]}.'})
+    else:
+        return jsonify({'error': 'Failed to push listing to Shopify.'}), 500
 
 @listing_bp.route('/api/listings/<int:id>/photos/generate', methods=['POST'])
 def generate_photos(id):

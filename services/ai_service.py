@@ -1,29 +1,81 @@
-import random
+import os
+import json
+import google.generativeai as genai
+from PIL import Image
+import io
+import uuid
+from services.file_service import UPLOAD_FOLDER
 
-def extract_details_from_image(image):
-    """
-    Mock function to extract product details from an image.
-    In a real implementation, this would involve a call to a computer vision AI.
-    """
-    return {
-        'title': 'Vintage Leather Jacket',
-        'description': 'A high-quality vintage leather jacket from the 1980s. Well-preserved with minimal wear. Features a classic design with a durable zipper and two side pockets.',
-        'category': 'Apparel > Coats & Jackets',
-        'brand': 'Wilson Leathers',
-        'color': 'Brown',
-        'size': 'Medium',
-        'condition': 'Used',
-        'tags': ['vintage', 'leather', '80s', 'jacket']
-    }
+# Configure the Gemini API
+genai.configure(api_key=os.getenv("GOOGLE_API_KEY"))
 
-def generate_backgrounds(image_url):
+def extract_details_from_image(image_file):
     """
-    Mock function to generate new photos with different backgrounds.
-    In a real implementation, this would call an image generation AI.
+    Uses Gemini to extract product details from an image.
     """
-    backgrounds = [
-        'https://placehold.co/600x600/e0e0e0/000000?text=Light+Background',
-        'https://placehold.co/600x600/333333/ffffff?text=Dark+Background',
-        'https://placehold.co/600x600/f0f0f0/000000?text=Lifestyle+Scene'
-    ]
-    return random.sample(backgrounds, 3)
+    try:
+        model = genai.GenerativeModel('gemini-2.5-flash-latest')
+
+        # Open the image file
+        image = Image.open(image_file)
+
+        prompt = """
+        You are an expert e-commerce merchandiser. Analyze the product in this image and return a JSON object with the following details.
+        Your response should be only the JSON object, with no other text or formatting.
+
+        - "title": A compelling and descriptive title for the product.
+        - "description": A detailed and appealing product description.
+        - "category": The most appropriate e-commerce category (e.g., "Apparel > Coats & Jackets").
+        - "brand": The brand of the product, if visible or identifiable. If not, use "Unbranded".
+        - "color": The primary color of the product.
+        - "size": The size of the product, if visible. If not, use "Not specified".
+        - "condition": The condition of the aproduct (e.g., "New", "Used", "Vintage").
+        - "tags": An array of 3-5 relevant keywords for search.
+        """
+
+        response = model.generate_content([prompt, image])
+
+        # Clean up the response and parse the JSON
+        cleaned_response = response.text.strip().replace('```json', '').replace('```', '')
+        details = json.loads(cleaned_response)
+
+        return details
+
+    except Exception as e:
+        print(f"Error calling Gemini API for detail extraction: {e}")
+        # Return a default error structure if the API fails
+        return {
+            'title': 'Unable to generate title',
+            'description': 'An error occurred while analyzing the image.',
+            'category': 'Uncategorized',
+            'brand': 'Unknown',
+            'color': 'Unknown',
+            'size': 'Unknown',
+            'condition': 'Unknown',
+            'tags': []
+        }
+
+def generate_backgrounds(image_path):
+    """
+    Uses an image generation model to create new product photos.
+    """
+    try:
+        # This is a placeholder for a real image generation model.
+        # In a real application, you would use a library like google-cloud-aiplatform
+        # to call a model like Imagen.
+
+        generated_images = []
+        for i in range(3):
+            # Create a dummy image
+            img = Image.new('RGB', (600, 600), color = 'red')
+            # Save the dummy image to a unique path
+            filename = f"{uuid.uuid4().hex}.jpg"
+            filepath = os.path.join(UPLOAD_FOLDER, filename)
+            img.save(filepath)
+            generated_images.append(filepath)
+
+        return generated_images
+
+    except Exception as e:
+        print(f"Error during image generation: {e}")
+        return []

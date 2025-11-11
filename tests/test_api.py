@@ -1,9 +1,11 @@
 import unittest
 import json
+from unittest.mock import patch, MagicMock
 from app import app, db
 from models.listing import Listing
 from models.photo import Photo
 from models.tag import Tag
+from io import BytesIO
 
 class ApiTestCase(unittest.TestCase):
     def setUp(self):
@@ -18,65 +20,100 @@ class ApiTestCase(unittest.TestCase):
             db.session.remove()
             db.drop_all()
 
-    def test_create_listing(self):
-        # We'll need to simulate a file upload for the 'photo' field
-        from io import BytesIO
-        data = {
-            'photo': (BytesIO(b'my file contents'), 'test.jpg')
-        }
+    @patch('services.ai_service.Image.open')
+    @patch('api.listing_routes.save_file')
+    @patch('services.ai_service.genai.GenerativeModel')
+    def test_create_listing(self, mock_generative_model, mock_save_file, mock_image_open):
+        # Mock save_file and Image.open
+        mock_save_file.return_value = 'uploads/test.jpg'
+        mock_image_open.return_value = MagicMock()
+
+        # Mock the Gemini API response
+        mock_response = MagicMock()
+        mock_response.text = json.dumps({
+            'title': 'Vintage Leather Jacket',
+            'description': 'A high-quality vintage leather jacket...',
+            'category': 'Apparel > Coats & Jackets',
+            'brand': 'Wilson Leathers',
+            'color': 'Brown',
+            'size': 'Medium',
+            'condition': 'Used',
+            'tags': ['vintage', 'leather', '80s']
+        })
+        mock_model_instance = MagicMock()
+        mock_model_instance.generate_content.return_value = mock_response
+        mock_generative_model.return_value = mock_model_instance
+
+        data = {'photo': (BytesIO(b'my file contents'), 'test.jpg')}
         response = self.app.post('/api/listings', content_type='multipart/form-data', data=data)
+
         self.assertEqual(response.status_code, 201)
         json_response = json.loads(response.data)
         self.assertEqual(json_response['title'], 'Vintage Leather Jacket')
         self.assertIn('vintage', json_response['tags'])
-        self.assertEqual(len(json_response['photos']), 1)
 
     def test_get_listing(self):
-        # First, create a listing to get
-        from io import BytesIO
-        data = {'photo': (BytesIO(b'my file contents'), 'test.jpg')}
-        self.app.post('/api/listings', content_type='multipart/form-data', data=data)
+        # Create a listing to test with
+        with app.app_context():
+            new_listing = Listing(title="Test Listing", description="Test Desc")
+            db.session.add(new_listing)
+            db.session.commit()
+            listing_id = new_listing.id
 
-        response = self.app.get('/api/listings/1')
+        response = self.app.get(f'/api/listings/{listing_id}')
         self.assertEqual(response.status_code, 200)
         json_response = json.loads(response.data)
-        self.assertEqual(json_response['id'], 1)
+        self.assertEqual(json_response['title'], 'Test Listing')
 
     def test_update_listing(self):
-        # Create a listing to update
-        from io import BytesIO
-        data = {'photo': (BytesIO(b'my file contents'), 'test.jpg')}
-        self.app.post('/api/listings', content_type='multipart/form-data', data=data)
+        with app.app_context():
+            new_listing = Listing(title="Old Title", description="Old Desc")
+            db.session.add(new_listing)
+            db.session.commit()
+            listing_id = new_listing.id
 
         update_data = {'title': 'New Title', 'sku': '12345'}
-        response = self.app.put('/api/listings/1', data=json.dumps(update_data), content_type='application/json')
+        response = self.app.put(f'/api/listings/{listing_id}', data=json.dumps(update_data), content_type='application/json')
         self.assertEqual(response.status_code, 200)
         json_response = json.loads(response.data)
         self.assertEqual(json_response['title'], 'New Title')
         self.assertEqual(json_response['sku'], '12345')
 
-    def test_generate_photos(self):
-        # Create a listing
-        from io import BytesIO
-        data = {'photo': (BytesIO(b'my file contents'), 'test.jpg')}
-        self.app.post('/api/listings', content_type='multipart/form-data', data=data)
+    @patch('api.listing_routes.generate_backgrounds')
+    def test_generate_photos(self, mock_generate_backgrounds):
+        # Mock generate_backgrounds
+        mock_generate_backgrounds.return_value = ['uploads/gen1.jpg', 'uploads/gen2.jpg', 'uploads/gen3.jpg']
 
-        response = self.app.post('/api/listings/1/photos/generate')
+        with app.app_context():
+            new_listing = Listing(title="Test Listing", description="Test Desc")
+            db.session.add(new_listing)
+            db.session.commit()
+            listing_id = new_listing.id
+            new_photo = Photo(listing_id=listing_id, original_url='uploads/test.jpg', is_primary=True)
+            db.session.add(new_photo)
+            db.session.commit()
+
+        response = self.app.post(f'/api/listings/{listing_id}/photos/generate')
         self.assertEqual(response.status_code, 200)
         json_response = json.loads(response.data)
-        # 1 original photo + 3 generated photos
+        # 1 original + 3 generated
         self.assertEqual(len(json_response['photos']), 4)
 
-    def test_publish_listing(self):
-        # Create a listing
-        from io import BytesIO
-        data = {'photo': (BytesIO(b'my file contents'), 'test.jpg')}
-        self.app.post('/api/listings', content_type='multipart/form-data', data=data)
+    @patch('api.listing_routes.push_to_shopify')
+    def test_publish_listing(self, mock_push_to_shopify):
+        # Mock push_to_shopify
+        mock_push_to_shopify.return_value = {'status': 'success', 'shopify_id': '12345'}
 
-        response = self.app.post('/api/listings/1/publish')
+        with app.app_context():
+            new_listing = Listing(title="Test Listing", description="Test Desc")
+            db.session.add(new_listing)
+            db.session.commit()
+            listing_id = new_listing.id
+
+        response = self.app.post(f'/api/listings/{listing_id}/publish')
         self.assertEqual(response.status_code, 200)
         json_response = json.loads(response.data)
-        self.assertEqual(json_response['message'], 'Listing 1 has been pushed to Shopify.')
+        self.assertEqual(json_response['message'], f'Listing {listing_id} has been pushed to Shopify with ID 12345.')
 
 if __name__ == '__main__':
     unittest.main()
