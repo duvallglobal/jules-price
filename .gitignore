@@ -9,6 +9,9 @@ instance/
 *.db
 *.sqlite3
 
+# Uploads
+uploads/
+
 # Environment
 .env
 venv/

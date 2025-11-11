@@ -1,6 +1,8 @@
 import os
 import json
 import google.generativeai as genai
+import vertexai
+from vertexai.preview.generative_models import GenerativeModel, Part
 from PIL import Image
 import io
 import uuid
@@ -8,13 +10,14 @@ from services.file_service import UPLOAD_FOLDER
 
 # Configure the Gemini API
 genai.configure(api_key=os.getenv("GOOGLE_API_KEY"))
+vertexai.init(project=os.getenv("GOOGLE_CLOUD_PROJECT"), location="us-central1")
 
 def extract_details_from_image(image_file):
     """
     Uses Gemini to extract product details from an image.
     """
     try:
-        model = genai.GenerativeModel('gemini-2.5-flash-latest')
+        model = genai.GenerativeModel('gemini-1.5-flash-latest')
 
         # Open the image file
         image = Image.open(image_file)
@@ -30,6 +33,7 @@ def extract_details_from_image(image_file):
         - "color": The primary color of the product.
         - "size": The size of the product, if visible. If not, use "Not specified".
         - "condition": The condition of the aproduct (e.g., "New", "Used", "Vintage").
+        - "price": A suggested price for the product, as a float.
         - "tags": An array of 3-5 relevant keywords for search.
         """
 
@@ -52,26 +56,37 @@ def extract_details_from_image(image_file):
             'color': 'Unknown',
             'size': 'Unknown',
             'condition': 'Unknown',
+            'price': 0.0,
             'tags': []
         }
 
 def generate_backgrounds(image_path):
     """
-    Uses an image generation model to create new product photos.
+    Uses Imagen to generate new product photos with different backgrounds.
     """
     try:
-        # This is a placeholder for a real image generation model.
-        # In a real application, you would use a library like google-cloud-aiplatform
-        # to call a model like Imagen.
+        model = GenerativeModel("imagen-3")
+
+        with open(image_path, "rb") as f:
+            image_bytes = f.read()
+
+        prompts = [
+            "A professional product photo of the item on a clean, light gray background.",
+            "A professional product photo of the item on a dark, textured background.",
+            "A lifestyle photo of the item in a setting that matches its use. For example, if it's a jacket, show it on a mannequin in a stylish room."
+        ]
 
         generated_images = []
-        for i in range(3):
-            # Create a dummy image
-            img = Image.new('RGB', (600, 600), color = 'red')
-            # Save the dummy image to a unique path
-            filename = f"{uuid.uuid4().hex}.jpg"
+        for prompt in prompts:
+            response = model.generate_content(
+                [Part.from_data(image_bytes, mime_type="image/jpeg"), prompt]
+            )
+
+            # Save the generated image
+            filename = f"{uuid.uuid4().hex}.png"
             filepath = os.path.join(UPLOAD_FOLDER, filename)
-            img.save(filepath)
+            with open(filepath, "wb") as f:
+                f.write(response.images[0]._image_bytes)
             generated_images.append(filepath)
 
         return generated_images

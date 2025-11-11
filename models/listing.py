@@ -14,6 +14,7 @@ class Listing(db.Model):
     package_length = db.Column(db.Float)
     package_width = db.Column(db.Float)
     package_height = db.Column(db.Float)
+    price = db.Column(db.Float)
     tags = db.relationship('Tag', backref='listing', lazy=True)
     photos = db.relationship('Photo', backref='listing', lazy=True)
 
@@ -29,6 +30,7 @@ class Listing(db.Model):
             'condition': self.condition,
             'sku': self.sku,
             'item_weight': self.item_weight,
+            'price': self.price,
             'package_dimensions': {
                 'length': self.package_length,
                 'width': self.package_width,

@@ -31,7 +31,8 @@ def create_listing():
         brand=details['brand'],
         color=details['color'],
         size=details['size'],
-        condition=details['condition']
+        condition=details['condition'],
+        price=details.get('price')
     )
 
     db.session.add(new_listing)
@@ -69,6 +70,7 @@ def update_listing(id):
     listing.condition = data.get('condition', listing.condition)
     listing.sku = data.get('sku', listing.sku)
     listing.item_weight = data.get('item_weight', listing.item_weight)
+    listing.price = data.get('price', listing.price)
 
     if 'package_dimensions' in data:
         listing.package_length = data['package_dimensions'].get('length', listing.package_length)

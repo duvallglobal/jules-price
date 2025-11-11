@@ -20,17 +20,12 @@ class ApiTestCase(unittest.TestCase):
             db.session.remove()
             db.drop_all()
 
-    @patch('services.ai_service.Image.open')
     @patch('api.listing_routes.save_file')
-    @patch('services.ai_service.genai.GenerativeModel')
-    def test_create_listing(self, mock_generative_model, mock_save_file, mock_image_open):
-        # Mock save_file and Image.open
+    @patch('api.listing_routes.extract_details_from_image')
+    def test_create_listing(self, mock_extract_details, mock_save_file):
+        # Mock save_file and extract_details_from_image
         mock_save_file.return_value = 'uploads/test.jpg'
-        mock_image_open.return_value = MagicMock()
-
-        # Mock the Gemini API response
-        mock_response = MagicMock()
-        mock_response.text = json.dumps({
+        mock_extract_details.return_value = {
             'title': 'Vintage Leather Jacket',
             'description': 'A high-quality vintage leather jacket...',
             'category': 'Apparel > Coats & Jackets',
@@ -38,11 +33,9 @@ class ApiTestCase(unittest.TestCase):
             'color': 'Brown',
             'size': 'Medium',
             'condition': 'Used',
+            'price': 125.00,
             'tags': ['vintage', 'leather', '80s']
-        })
-        mock_model_instance = MagicMock()
-        mock_model_instance.generate_content.return_value = mock_response
-        mock_generative_model.return_value = mock_model_instance
+        }
 
         data = {'photo': (BytesIO(b'my file contents'), 'test.jpg')}
         response = self.app.post('/api/listings', content_type='multipart/form-data', data=data)
@@ -50,6 +43,7 @@ class ApiTestCase(unittest.TestCase):
         self.assertEqual(response.status_code, 201)
         json_response = json.loads(response.data)
         self.assertEqual(json_response['title'], 'Vintage Leather Jacket')
+        self.assertEqual(json_response['price'], 125.00)
         self.assertIn('vintage', json_response['tags'])
 
     def test_get_listing(self):
@@ -72,12 +66,13 @@ class ApiTestCase(unittest.TestCase):
             db.session.commit()
             listing_id = new_listing.id
 
-        update_data = {'title': 'New Title', 'sku': '12345'}
+        update_data = {'title': 'New Title', 'sku': '12345', 'price': 99.99}
         response = self.app.put(f'/api/listings/{listing_id}', data=json.dumps(update_data), content_type='application/json')
         self.assertEqual(response.status_code, 200)
         json_response = json.loads(response.data)
         self.assertEqual(json_response['title'], 'New Title')
         self.assertEqual(json_response['sku'], '12345')
+        self.assertEqual(json_response['price'], 99.99)
 
     @patch('api.listing_routes.generate_backgrounds')
     def test_generate_photos(self, mock_generate_backgrounds):
@@ -109,6 +104,9 @@ class ApiTestCase(unittest.TestCase):
             db.session.add(new_listing)
             db.session.commit()
             listing_id = new_listing.id
+            new_photo = Photo(listing_id=listing_id, original_url='uploads/test.jpg', is_primary=True)
+            db.session.add(new_photo)
+            db.session.commit()
 
         response = self.app.post(f'/api/listings/{listing_id}/publish')
         self.assertEqual(response.status_code, 200)
